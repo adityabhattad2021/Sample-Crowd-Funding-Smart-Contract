@@ -1,0 +1,41 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "contracts/FundMe.sol": {
+      "content": "/*\n    This Contract will:\n        Get funds from the users\n        Withdraw Funds\n        Set a Minimum Funding Value in USD\n*/\n\n/* \n    Blockchain Oracle: Any device that interacts with the off-chain world to provide external data \n    or computation to the smart contracts.\n*/\n\n// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport \"./PriceConverter.sol\";\n\nerror NotOwner();\n\ncontract FundMe {\n    // Gas optimisations keyword:constant and immutable.(Learn more later).\n\n    address public immutable i_Owner;\n\n    AggregatorV3Interface public priceFeed;\n\n    // Basic Constructor in Solidity.\n    constructor(address priceFeedAddress) {\n        i_Owner = msg.sender;\n        priceFeed=AggregatorV3Interface(priceFeedAddress);\n    }\n\n    using PriceConverter for uint256;\n\n    uint256 public constant MINIMUM_USD = 50 * 1e18;\n    // Payble keyword allows this contract to hold gas.\n\n    address[] public funders;\n    mapping(address => uint256) public amtSentFromAddress;\n\n    function fundinWEI() public payable {\n        // Want to be able to set a minimum fund amount in USD\n        // 1. How do we send ETH to this contract?\n        require(\n            msg.value.getConversionRate(priceFeed) >= MINIMUM_USD,\n            \"Not Enough Funds\"\n        ); // as the money math is done inn wei therefore 1e18=1*10**18.\n        // if the above condition isn't met the function will revert any previously done by it and return.\n        funders.push(msg.sender);\n        amtSentFromAddress[msg.sender] = msg.value;\n    }\n\n    // Adding modifier onlyOwner created below.\n    function withdraw() public onlyOwner {\n        for (\n            uint256 funderIndex = 0;\n            funderIndex < funders.length;\n            funderIndex++\n        ) {\n            address _funder = funders[funderIndex];\n            amtSentFromAddress[_funder] = 0;\n        }\n        // Resetting the array.\n        funders = new address[](0);\n        (bool callSuccess, ) = payable(msg.sender).call{\n            value: address(this).balance\n        }(\"\");\n        require(callSuccess, \"Call Failed\");\n    }\n\n    // function getConversionRates(uint256 ethAmt) public view returns (uint256) {\n    //     return PriceConverter.getConversionRate(ethAmt);\n    // }\n\n    // Modifier in Solidity..\n    modifier onlyOwner() {\n        // This means wherever this tag(i.e. onlyOwner) is added the\n        // code in that function will be run in the order below .\n\n        // first this line.👇\n\n        // to save gas we are using alternative of this.\n        // require(msg.sender==i_owner,\"Only owner can use withdraw function\");\n\n        if (msg.sender != i_Owner) {\n            revert NotOwner();\n        }\n\n        //  and then rest of the code present in that function.\n        // _;: represents rest of the code present in the function\n        // in which modifier tag is added.\n        _;\n    }\n\n    // what happens if some one sends this contract ETH without calling fund function.\n    receive() external payable {\n        fundinWEI();\n    }\n\n    fallback() external payable {\n        fundinWEI();\n    }\n}\n"
+    },
+    "contracts/PriceConverter.sol": {
+      "content": "//SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.0;\n\n\nimport \"@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol\";\n// StateVariables: These are the variables whose values are permenantly stored \n// in the contract storage even after the functions they are declared \n// in are executed.\n// Local Variables: Variables whose values are present till function is executing.\n// A Library Cannot have State Variables and all the functions in Library are Internal.\n// A Library cannot inherit any element.\n// A Library cannot be inherited.\n\nlibrary PriceConverter{\n\n    function getPrice(AggregatorV3Interface priceFeed) internal view returns(uint256) \n    {\n        /*\n        To Interact with contract outside of our project we will need its\n`       ABI:Application Binary Interface\n        Address:0x8A753747A1Fa494EC906cE90E9f37563A8AF630e\n        (Took From : https://docs.chain.link/docs/ethereum-addresses/) (Rinkesby Testnet)\n        */\n        (\n            /*uint80 roundID*/,\n            int price,\n            /*uint startedAt*/,\n            /*uint timeStamp*/,\n            /*uint80 answeredInRound*/\n        ) = priceFeed.latestRoundData();\n\n        // This is price of ETH in terms of USD.\n        return uint256(price * 1e10);\n\n    }\n\n    function getVersion() internal view returns(uint256)\n    {\n        AggregatorV3Interface priceFeed=AggregatorV3Interface(0x8A753747A1Fa494EC906cE90E9f37563A8AF630e);\n        return priceFeed.version();\n    }\n\n    function getConversionRate(uint256 ethAmount,AggregatorV3Interface priceFeed) internal view returns(uint256){\n        uint256 ethPrice=getPrice(priceFeed);\n        uint256 ethAmtInUSD=(ethPrice*ethAmount)/1e18;\n        return ethAmtInUSD;\n    }\n\n}"
+    },
+    "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  // getRoundData and latestRoundData should both raise \"No data present\"\n  // if they do not have data to report, instead of returning unset values\n  // which could be misinterpreted as actual reported values.\n  function getRoundData(uint80 _roundId)\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n\n  function latestRoundData()\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
